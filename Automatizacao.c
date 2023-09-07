@@ -1,0 +1,151 @@
+//PROJETO TCC
+//NOME DO PROJETO:SISTEMA AUTOMATIZADO VÁLVULA SOLENOIDE REGULADORA DE NITROGENIO PASSANTE ATIVADA REMOTAMENTE VIA WIFI ESP32
+//DATA: //
+//INTEGRANTES:JOÃO VITORI,KAYKY LEONARDO,NATA GUEDES,ROBERTO HENRIQUE,SAMUEL FELIPE,YURI RIBEIRO
+//DOCENTE:CRISTIANO DIOGO
+
+//DEFINE AS CONEXÕES DA REDE WIFI COM PLATAFORMA BLYNK
+#include <stdio.h> //BIBLIOTECA C
+#define BLYNK_PRINT Serial //DEFINE SERIAL PRINT DA PLATAFORMA BLYNK 
+#include <WiFi.h> //BIBLIOTECA WIFI 
+#include <WiFiClient.h> //BIBLIOTECA WIFI CLIENTE 
+#include <BlynkSimpleEsp32.h> //BIBLIOTECA ESP32
+
+//DEFINE AS BIBLIOTECAS UTILIZADAS
+#include <Adafruit_Sensor.h> //BIBLIOTECA SENSOR 
+#include <DHT.h> //BIBLIOTECA DO SENSOR DE TEMPERATURA DHT11
+#include <NewPing.h> //BIBLIOTECA SENSOR UTRASSÔNICO 
+
+//DEFINE TOKEN NOME E SENHA DA REDE UTIZADA
+char auth[] = "_crOs6rIimAKHImbthGz6QB2OHLCY2yt"; //TOKEN
+char ssid[] = "2.4_NETVIRTUA1174"; //NOME DA REDE
+char pass[] = "215821100"; //SENHA
+
+//DEFINE OS PINOS DOS SENSORES, MODULOS, LEDS
+#define LED_VERDE_PIN 33 //PINO DO LED VERDE 
+#define LED_VERMELHO_PIN 26 //PINO DO LED VERMELHO
+#define LED_AMARELO_PIN 27 //PINO DO LED AMARELO
+#define RELE_PIN 14 //PINO MODULO RELÉ 
+#define SENSOR_FOGO_PIN 13 //PINO SENSOR DE CHAMA 
+#define SENSOR_GAS_PIN 34 //PINO SENSOR DE GAS 
+#define DHTPIN 12 //PINO DO SENSOR DE TEMPERATURA DHT11
+#define DHTTYPE DHT11 //DEFINE SENSOR DE TEMPERATURA 
+#define TANQUE_DIAMETRO 3 //DEFINE O DIAMETRO DO TANQUE 
+#define TANQUE_ALTURA 10 //DEFINE A ALTURA DO TANQUE 
+#define TRIGGER_PIN  32  //DEFINE O PINO DO TRIGGER DO SENSOR ULTRASSÔNICO 
+#define ECHO_PIN     35 //DEFINE O PINO DO ECHO DO SENSOR ULTRASSÔNICO 
+#define MAX_DISTANCE 200  //DEFINE A DISTÂNCIA MÁXIMA DO SENSOR ULTRASSÔNICO MEDIDA EM CM 
+#define VIRTUAL_PIN  V5//DEFINE O PINO VIRTUAL DA PLATAFORMA BLYNK 
+NewPing sonar(TRIGGER_PIN, ECHO_PIN, TANQUE_ALTURA * 2); //DEFINE OS PINOS DO SENSOR ULTRASSÔNICO
+
+//DEFINE VARIAVEIS
+bool sensor_fogo_estado = false; //VARIAVEL DO ESTADO DO SENSOR DE CHAMA
+bool sensor_gas_estado = false; //VARIAVEL DO ESTADO DO SENSOR DE GAS
+DHT dht(DHTPIN, DHTTYPE); //VARIAVEL TEMPERATURA
+float temperatura; //VARIAVEL TEMPERATURA
+BlynkTimer timer; //TEMPO DE EXECUÇÃO
+
+void sendSensor() { //PROGRAMAÇÃO E FUNÇÃO DO SENSOR DE TEMPERATURA DHT11
+  temperatura = dht.readTemperature(); //LÊ A TEMPERATURA EM GRAUS C°
+  Serial.print("Temperatura: "); //MOSTRA AO SERIAL TEMPERATURA
+  Serial.print(temperatura); //MOSTRA AO SERIAL TEMPERATURA
+  Serial.println(" °C"); //MOSTRA AO SERIAL °C
+  Blynk.virtualWrite(V4, temperatura); //ENVIA A TEMPERATURA PARA O WIDGET DE VALOR VIRTUAL NO V1
+  if (temperatura > 32) { //SE A TEMPERATURA FOR ACIMA DE 32 GRAUS C°
+    digitalWrite(RELE_PIN, LOW); //DESLIGA RELÉ
+    digitalWrite(LED_VERDE_PIN, LOW); //DESLIGA LED VERDE
+    digitalWrite(LED_VERMELHO_PIN, HIGH); //LIGA LED VERMELHO
+    digitalWrite(LED_AMARELO_PIN, HIGH); //LIGA LED AMARELO
+  } else { //SE NÃO FOR MAIOR QUE 32 GRAUS C°
+  }
+}
+
+void setup() { //CONFIGURAÇÃO
+  Serial.begin(9600); //INICIA MONITOR SERIAL
+  Blynk.begin(auth, ssid, pass); //INICIA PLATAFORMA BLYNK LER TOKEN,NOME E SENHA DA REDE
+  Blynk.virtualWrite(VIRTUAL_PIN, "Nível de Água: 0 cm"); //PINO VIRTUAL MOSTRA NIVEL DE NITROGENIO
+  pinMode(LED_VERDE_PIN, OUTPUT); //DEFINE PINO LED VERDE COMO SAÍDA
+  pinMode(LED_VERMELHO_PIN, OUTPUT); //DEFINE PINO LED VERMELHO COMO SAÍDA
+  pinMode(LED_AMARELO_PIN, OUTPUT); //DEFINE PINO LED AMARELO COMO SAÍDA
+  pinMode(RELE_PIN, OUTPUT); //DEFINE PINO RELÉ COMO SAÍDA
+  pinMode(SENSOR_FOGO_PIN, INPUT_PULLUP); //DEFINE PINO SENSOR DE CHAMA COMO ENTRADA
+  pinMode(SENSOR_GAS_PIN, INPUT_PULLUP); //DEFINE PINO SENSOR DE GAS COMO ENTRADA
+  digitalWrite(LED_VERDE_PIN, LOW); //ESTADO INICIAL DO LED VERDE DESLIGADO
+  digitalWrite(LED_VERMELHO_PIN, HIGH); //ESTADO INICIAL DO LED VERMELHO LIGADO
+  digitalWrite(LED_AMARELO_PIN, LOW); //ESTADO INICIAL DO LED AMARELO DESLIGADO
+  digitalWrite(RELE_PIN, LOW); //ESTADO INICIAL DO RELÉ DESLIGADO
+  dht.begin(); //INCIA O SENSOR DE TEMPERATURA DHT11
+  timer.setInterval(1000L, lerSensorGas); //VARIAVEL DO SENSOR DE GAS
+  timer.setInterval(1000L, lerSensorFogo); //VARIAVEL DO SENSOR DE CHAMA
+  timer.setInterval(500L, sendSensor); //VARIAVEL DO SENSOR DE TEMPERATURA
+}
+void loop() { //REPETIÇÃO DO PROGRAMA
+  Blynk.run(); //REPETIÇÃO DO PROGRAMA
+  timer.run(); //TEMPO ATIVO
+  int distance = sonar.ping_cm(); //DISTÂNCIA DO SENSOR UTRASSÔNICO
+  float area = (TANQUE_DIAMETRO / 2) * (TANQUE_DIAMETRO / 2) * PI; //VARIAVEL DA AREA
+  float volume = area * (TANQUE_ALTURA - distance); //VARIAVEL DO VOLUME
+  volume = min(volume, area * TANQUE_ALTURA); //LIMITA O VOLUME MÁXIMO DA CAPACIDADE TOTAL DO TANQUE
+  Blynk.virtualWrite(VIRTUAL_PIN, volume); //MOSTRA O VOLUME DE NITROGENIO NO PINO VIRTUAL
+}
+void lerSensorFogo() { //PROGRAMAÇÃO PARA O SENSOR DE CHAMA
+  bool estado_anterior = sensor_fogo_estado; //VARIAVEL PARA O SENSOR DE CHAMA
+  sensor_fogo_estado = digitalRead(SENSOR_FOGO_PIN) == LOW; //ESTADO INICIAL DO SENSOR DE CHAMA
+  if (estado_anterior != sensor_fogo_estado) { //ESTADO DO SENSOR DE CHAMA
+    if (sensor_fogo_estado) { //SE O ESTADO DO SENSOR DE CHAMA E ATIVADO
+      Blynk.virtualWrite(V7, "Sensor de fogo ativado"); //PINO VIRTUAL MOSTRA NO MONITOR
+         Blynk.logEvent("alerta_de_fogo","FOGO DETECTADO");
+
+      digitalWrite(LED_VERDE_PIN, LOW); //LIGA LED VERDE
+      digitalWrite(LED_VERMELHO_PIN, HIGH); //LIGA LED VERMELHO
+      timer.setInterval(500L, piscarLedAmarelo); //PISCAR LED AMARELO
+      digitalWrite(LED_AMARELO_PIN, HIGH); //LIGA LED AMARELO
+      digitalWrite(RELE_PIN, LOW); //DESLIGA RELÉ
+    } else { //SE NÃO
+      Blynk.virtualWrite(V1, "Sensor de fogo desativado"); //PINO VIRTUAL MOSTRA NO MONITOR
+      digitalWrite(LED_AMARELO_PIN, LOW); //LED AMARELO DESLIGA
+      timer.setInterval(0L, piscarLedAmarelo); //PARA DE PISCAR O LED AMARELO
+    }
+  }
+}
+void lerSensorGas() { //PROGRAMAÇÃO PARA O SENSOR DE GAS
+  bool estado_anterior = sensor_gas_estado; //VARIAVEL PARA O SENSOR DE GAS
+  sensor_gas_estado = digitalRead(SENSOR_GAS_PIN) == LOW; //ESTADO INICIAL DO SENSOR DE GAS
+  if (estado_anterior != sensor_gas_estado) { //ESTADO DO SENSOR DE GAS
+    if (sensor_gas_estado) { //SE O ESTADO DO SENSOR DE CHAMA E ATIVADO
+      Blynk.virtualWrite(V6, "Sensor de fogo ativado"); //PINO VIRTUAL MOSTRA NO MONITOR
+        Blynk.logEvent("alerta_de_gas","GAS DETECTADO");
+
+      digitalWrite(LED_VERDE_PIN, LOW); //LIGA LED VERDE
+      digitalWrite(LED_VERMELHO_PIN, HIGH); //LIGA LED VERMELHO
+      timer.setInterval(500L, piscarLedAmarelo); //PISCAR LED AMARELO
+      digitalWrite(LED_AMARELO_PIN, HIGH); //LIGA LED AMARELO
+      digitalWrite(RELE_PIN, LOW); //DESLIGA RELÉ
+    } else { //SE NÃO
+      Blynk.virtualWrite(V1, "Sensor de fogo desativado"); //PINO VIRTUAL MOSTRA NO MONITOR
+      digitalWrite(LED_AMARELO_PIN, LOW); //LED AMARELO DESLIGA
+      timer.setInterval(0L, piscarLedAmarelo); //PARA DE PISCAR O LED AMARELO
+    }
+  }
+}
+void piscarLedAmarelo() { //VARIAVEL FAZ LED AMARELO PISCAR
+  static bool estado_led = false; //ESTADO INICIAL DO LED AMARELO FALSO
+  estado_led = !estado_led; //ESTADO DO LED AMARELO
+  digitalWrite(LED_AMARELO_PIN, estado_led); //FUNÇÃO E ESTADO DO LED AMARELO
+}
+BLYNK_WRITE(V1) //PINO VIRTUAL NO BLYNK
+{
+  int value = param.asInt(); //PARAMETRO VALUE
+  if (value == 1) { //SE SIM
+    digitalWrite(LED_VERDE_PIN, HIGH); //LIGA LED VERDE
+    digitalWrite(LED_VERMELHO_PIN, LOW); //DESLIGA LED VERMELHO
+    digitalWrite(LED_AMARELO_PIN, LOW); //DESLIGA LED AMARELO
+    digitalWrite(RELE_PIN, HIGH); //DESLIGA RELÉ
+  } else { //SE NÃO
+    digitalWrite(LED_AMARELO_PIN, LOW); //DESLIGA LED AMARELO
+    digitalWrite(LED_VERDE_PIN, LOW); //DESLIGA LED VERDE
+    digitalWrite(LED_VERMELHO_PIN, HIGH); //LIGA LED VERMELHO
+    digitalWrite(RELE_PIN, LOW); //DESLIGA RELÉ
+  }
+  //FIM DO PROGRAMA
+}
