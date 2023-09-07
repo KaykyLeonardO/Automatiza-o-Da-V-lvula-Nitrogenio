@@ -1,0 +1,1 @@
+-👨‍🏫 Projeto Da Automatização Da Válvula Solenoide Reguladora De Nitrogenio Passante Ativada Remotamente Via Wifi Esp32.
